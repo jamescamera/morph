@@ -1,9 +1,59 @@
-// Morph engine: a WebGL renderer that flows one image into the next.
-// Each transition warps both frames through a shared noise field while a
-// noise-shaped mask decides which frame shows through, so edges melt rather
-// than crossfade.
+// Morph engine.
+//
+// "Face" mode is a classic feature-based morph, the technique behind the famous
+// 1991 face-morph music video: matching landmarks on two faces are triangulated,
+// every triangle slides from face A's shape to face B's, and the pixels
+// cross-dissolve at the same time.
+//
+// The other modes (liquid, swirl, luma, shatter) are noise-driven melts for
+// images without faces.
 
-const VERT = `
+import Delaunator from 'https://cdn.jsdelivr.net/npm/delaunator@5.0.1/+esm';
+import { buildMesh } from './faces.mjs';
+
+// Shared finishing pass: monochrome, film grain, vignette.
+const FINISH = `
+uniform float mono, grain, time;
+uniform vec2 res;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+vec3 finish(vec3 col) {
+  vec2 q = gl_FragCoord.xy / res;
+  if (mono > 0.5) col = vec3(smoothstep(0.02, 0.98, luma(col)));
+  col += (hash(q * 900.0 + fract(time) * 50.0) - 0.5) * grain;
+  float vig = smoothstep(1.1, 0.35, distance(q, vec2(0.5)));
+  return col * mix(0.72, 1.0, vig);
+}`;
+
+const MESH_VERT = `
+attribute vec2 pa, pb, ua, ub;
+uniform float warp;
+varying vec2 vua, vub;
+void main() {
+  vec2 p = mix(pa, pb, warp);
+  vua = ua; vub = ub;
+  gl_Position = vec4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0);
+}`;
+
+const MESH_FRAG = `
+precision highp float;
+varying vec2 vua, vub;
+uniform sampler2D texA, texB;
+uniform float dissolve, wire;
+${FINISH}
+// Past the photo's edge, mirror it (no smeared edge pixels) and darken gently.
+vec3 pick(sampler2D t, vec2 u) {
+  vec2 mirrored = 1.0 - abs(1.0 - mod(u, 2.0));
+  float outside = length(u - clamp(u, 0.0, 1.0));
+  return texture2D(t, mirrored).rgb * (1.0 - 0.55 * smoothstep(0.0, 0.3, outside));
+}
+void main() {
+  if (wire > 0.5) { gl_FragColor = vec4(1.0, 1.0, 1.0, 0.28); return; }
+  vec3 col = mix(pick(texA, vua), pick(texB, vub), dissolve);
+  gl_FragColor = vec4(finish(col), 1.0);
+}`;
+
+const MELT_VERT = `
 attribute vec2 p;
 varying vec2 uv;
 void main() {
@@ -12,15 +62,14 @@ void main() {
   gl_Position = vec4(p, 0.0, 1.0);
 }`;
 
-const FRAG = `
+const MELT_FRAG = `
 precision highp float;
 varying vec2 uv;
 uniform sampler2D texA, texB;
-uniform vec4 fitA, fitB;   // xy = scale, zw = offset (object-fit: cover)
-uniform float progress, time, strength, mono, grain;
-uniform int mode;          // 0 liquid, 1 swirl, 2 luma, 3 shatter
-
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+uniform vec4 fitA, fitB;   // xy = scale (object-fit: cover)
+uniform float progress, strength;
+uniform int mode;          // 1 liquid, 2 swirl, 3 luma, 4 shatter
+${FINISH}
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   vec2 u = f * f * (3.0 - 2.0 * f);
@@ -33,39 +82,34 @@ float fbm(vec2 p) {
   return v;
 }
 vec3 sampleFit(sampler2D t, vec4 fit, vec2 q) {
-  return texture2D(t, clamp((q - 0.5) * fit.xy + 0.5 + fit.zw, 0.001, 0.999)).rgb;
+  return texture2D(t, clamp((q - 0.5) * fit.xy + 0.5, 0.001, 0.999)).rgb;
 }
-float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 vec2 rot(vec2 q, float a) {
   vec2 d = q - 0.5; float s = sin(a), c = cos(a);
   return vec2(c * d.x - s * d.y, s * d.x + c * d.y) + 0.5;
 }
-
 void main() {
   float t = progress;
-  float bell = sin(3.14159265 * t);          // 0 at ends, 1 mid-morph
+  float bell = sin(3.14159265 * t);
   vec2 flow = vec2(fbm(uv * 3.0 + time * 0.15), fbm(uv * 3.0 + 7.3 - time * 0.15)) - 0.5;
   vec2 qa = uv, qb = uv;
   float mask;
-
-  if (mode == 1) {
+  if (mode == 2) {
     float r = distance(uv, vec2(0.5));
     float ang = strength * 7.0 * bell * (1.0 - smoothstep(0.0, 0.75, r));
     qa = rot(uv, ang); qb = rot(uv, -ang * 0.6);
-    mask = smoothstep(t - 0.15, t + 0.15, r * 0.9 + fbm(uv * 4.0) * 0.25);
-    mask = 1.0 - mask;
-  } else if (mode == 2) {
+    mask = 1.0 - smoothstep(t - 0.15, t + 0.15, r * 0.9 + fbm(uv * 4.0) * 0.25);
+  } else if (mode == 3) {
     qa = uv + flow * strength * 0.25 * t;
     qb = uv - flow * strength * 0.25 * (1.0 - t);
     float l = luma(sampleFit(texA, fitA, qa));
     float edge = t * 1.4 - 0.2;
     mask = smoothstep(edge + 0.2, edge - 0.2, 1.0 - l);
-  } else if (mode == 3) {
+  } else if (mode == 4) {
     vec2 cell = floor(uv * 14.0 + flow * 3.0);
-    float h = hash(cell);
     vec2 kick = (vec2(hash(cell + 3.1), hash(cell + 8.7)) - 0.5) * strength * 0.3 * bell;
     qa = uv + kick; qb = uv - kick;
-    mask = step(h, t);
+    mask = step(hash(cell), t);
   } else {
     qa = uv + flow * strength * 0.45 * t;
     qb = uv - flow * strength * 0.45 * (1.0 - t);
@@ -73,22 +117,11 @@ void main() {
     float edge = t * 1.5 - 0.25;
     mask = smoothstep(edge + 0.12, edge - 0.12, n);
   }
-
-  vec3 a = sampleFit(texA, fitA, qa);
-  vec3 b = sampleFit(texB, fitB, qb);
-  vec3 col = mix(a, b, mask);
-
-  if (mono > 0.5) {
-    float g = luma(col);
-    g = smoothstep(0.02, 0.98, g);          // push toward silver-gelatin contrast
-    col = vec3(g);
-  }
-  col += (hash(uv * 900.0 + fract(time) * 50.0) - 0.5) * grain;
-  float vig = smoothstep(1.1, 0.35, distance(uv, vec2(0.5)));
-  gl_FragColor = vec4(col * mix(0.7, 1.0, vig), 1.0);
+  vec3 col = mix(sampleFit(texA, fitA, qa), sampleFit(texB, fitB, qb), mask);
+  gl_FragColor = vec4(finish(col), 1.0);
 }`;
 
-export const MODES = { liquid: 0, swirl: 1, luma: 2, shatter: 3 };
+export const MODES = { face: 0, liquid: 1, swirl: 2, luma: 3, shatter: 4 };
 
 const MAX_SIDE = 1600;
 
@@ -108,34 +141,39 @@ export async function loadImage(src) {
   return scaled;
 }
 
+const ease = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+let nextId = 1;
+
 export class Morph {
   constructor(canvas) {
     this.canvas = canvas;
-    const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: false });
+    const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: true });
     if (!gl) throw new Error('WebGL is not available in this browser.');
     this.gl = gl;
-    this.program = this.#link(VERT, FRAG);
-    gl.useProgram(this.program);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    const buf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    this.mesh = this.#program(MESH_VERT, MESH_FRAG,
+      ['texA', 'texB', 'warp', 'dissolve', 'wire', 'mono', 'grain', 'time', 'res'], ['pa', 'pb', 'ua', 'ub']);
+    this.melt = this.#program(MELT_VERT, MELT_FRAG,
+      ['texA', 'texB', 'fitA', 'fitB', 'progress', 'strength', 'mode', 'mono', 'grain', 'time', 'res'], ['p']);
+
+    this.quad = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-    const loc = gl.getAttribLocation(this.program, 'p');
-    gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    this.meshVbo = gl.createBuffer();
+    this.meshTris = gl.createBuffer();
+    this.meshEdges = gl.createBuffer();
+    this.meshKey = '';
+    this.meshCache = new Map();
 
-    this.u = {};
-    for (const name of ['texA', 'texB', 'fitA', 'fitB', 'progress', 'time', 'strength', 'mono', 'grain', 'mode']) {
-      this.u[name] = gl.getUniformLocation(this.program, name);
-    }
-    gl.uniform1i(this.u.texA, 0);
-    gl.uniform1i(this.u.texB, 1);
-
-    this.frames = [];   // { bitmap, texture }
-    this.settings = { mode: 'liquid', strength: 0.6, mono: true, grain: 0.06, hold: 0.8, morph: 2.2, loop: true };
+    this.frames = [];   // { id, bitmap, width, height, face, texture }
+    this.settings = { mode: 'face', strength: 0.6, mono: true, grain: 0.05, hold: 0.7, morph: 1.8, loop: true, wire: false };
   }
 
-  #link(vs, fs) {
+  #program(vs, fs, uniforms, attribs) {
     const gl = this.gl;
     const compile = (type, src) => {
       const s = gl.createShader(type);
@@ -144,12 +182,18 @@ export class Morph {
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
       return s;
     };
-    const p = gl.createProgram();
-    gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
-    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
-    gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-    return p;
+    const program = gl.createProgram();
+    gl.attachShader(program, compile(gl.VERTEX_SHADER, vs));
+    gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+    const u = {}, a = {};
+    for (const name of uniforms) u[name] = gl.getUniformLocation(program, name);
+    for (const name of attribs) a[name] = gl.getAttribLocation(program, name);
+    gl.useProgram(program);
+    gl.uniform1i(u.texA, 0);
+    gl.uniform1i(u.texB, 1);
+    return { program, u, a };
   }
 
   #texture(bitmap) {
@@ -164,15 +208,15 @@ export class Morph {
     return tex;
   }
 
-  addFrame(bitmap) {
-    this.frames.push({ bitmap, texture: this.#texture(bitmap) });
+  /** face: landmark array from detectFace(), or null for images without a face. */
+  addFrame(bitmap, face = null) {
+    this.frames.push({ id: nextId++, bitmap, width: bitmap.width, height: bitmap.height, face, texture: this.#texture(bitmap) });
   }
 
   removeFrame(i) {
     const [f] = this.frames.splice(i, 1);
-    if (!f) return;
-    this.gl.deleteTexture(f.texture);
-    f.bitmap.close?.();
+    if (f) this.gl.deleteTexture(f.texture);
+    return f;
   }
 
   moveFrame(from, to) {
@@ -184,51 +228,114 @@ export class Morph {
   get duration() {
     const n = this.frames.length;
     if (n < 2) return 0;
-    const segments = this.settings.loop ? n : n - 1;
-    return segments * (this.settings.hold + this.settings.morph) + (this.settings.loop ? 0 : this.settings.hold);
+    const { hold, morph, loop } = this.settings;
+    return (loop ? n : n - 1) * (hold + morph) + (loop ? 0 : hold);
   }
 
-  /** Map a timeline position to (fromIndex, toIndex, progress). */
+  /** Map a timeline position to (fromIndex, toIndex, progress 0..1 linear). */
   locate(t) {
     const n = this.frames.length;
+    if (n < 2) return { a: 0, b: 0, p: 0 };
     const { hold, morph, loop } = this.settings;
     const seg = hold + morph;
     const segments = loop ? n : n - 1;
-    let i = Math.floor(t / seg);
+    const i = Math.floor(t / seg);
     if (i >= segments) return { a: loop ? 0 : n - 1, b: loop ? 0 : n - 1, p: 0 };
     const local = t - i * seg;
-    const p = local < hold ? 0 : (local - hold) / morph;
-    const ease = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
-    return { a: i, b: (i + 1) % n, p: ease };
+    return { a: i, b: (i + 1) % n, p: local < hold ? 0 : (local - hold) / morph };
   }
 
-  #fit(bitmap) {
+  #fit(f) {
     const cw = this.canvas.width, ch = this.canvas.height;
-    const ia = bitmap.width / bitmap.height, ca = cw / ch;
+    const ia = f.width / f.height, ca = cw / ch;
     return ia > ca ? [ca / ia, 1, 0, 0] : [1, ia / ca, 0, 0];
+  }
+
+  #useMesh(A, B) {
+    const gl = this.gl;
+    const W = this.canvas.width, H = this.canvas.height;
+    const key = `${A.id}:${B.id}:${W}x${H}`;
+    let mesh = this.meshCache.get(key);
+    if (!mesh) {
+      mesh = buildMesh(Delaunator, A, B, W, H);
+      if (this.meshCache.size > 24) this.meshCache.clear();
+      this.meshCache.set(key, mesh);
+    }
+    if (this.meshKey !== key) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.meshVbo);
+      gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.meshTris);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.triangles, gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.meshEdges);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.edges, gl.DYNAMIC_DRAW);
+      this.meshKey = key;
+    }
+    return mesh;
+  }
+
+  #common(prog, t) {
+    const gl = this.gl;
+    gl.uniform1f(prog.u.mono, this.settings.mono ? 1 : 0);
+    gl.uniform1f(prog.u.grain, this.settings.grain);
+    gl.uniform1f(prog.u.time, t);
+    gl.uniform2f(prog.u.res, this.canvas.width, this.canvas.height);
   }
 
   render(t) {
     const gl = this.gl;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    if (this.frames.length === 0) {
-      gl.clearColor(0, 0, 0, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      return;
-    }
-    const { a, b, p } = this.frames.length === 1 ? { a: 0, b: 0, p: 0 } : this.locate(t);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    if (this.frames.length === 0) return;
+
+    const { a, b, p } = this.locate(t);
     const A = this.frames[a], B = this.frames[b];
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, A.texture);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, B.texture);
-    gl.uniform4fv(this.u.fitA, this.#fit(A.bitmap));
-    gl.uniform4fv(this.u.fitB, this.#fit(B.bitmap));
-    gl.uniform1f(this.u.progress, p);
-    gl.uniform1f(this.u.time, t);
-    gl.uniform1f(this.u.strength, this.settings.strength);
-    gl.uniform1f(this.u.mono, this.settings.mono ? 1 : 0);
-    gl.uniform1f(this.u.grain, this.settings.grain);
-    gl.uniform1i(this.u.mode, MODES[this.settings.mode] ?? 0);
+
+    if (this.settings.mode === 'face' && A.face && B.face) this.#drawFaces(A, B, p, t);
+    else this.#drawMelt(A, B, p, t);
+  }
+
+  #drawFaces(A, B, p, t) {
+    const gl = this.gl;
+    const prog = this.mesh;
+    gl.useProgram(prog.program);
+    const mesh = this.#useMesh(A, B);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.meshVbo);
+    ['pa', 'pb', 'ua', 'ub'].forEach((name, k) => {
+      gl.enableVertexAttribArray(prog.a[name]);
+      gl.vertexAttribPointer(prog.a[name], 2, gl.FLOAT, false, 32, k * 8);
+    });
+    this.#common(prog, t);
+    gl.uniform1f(prog.u.warp, ease(p));
+    gl.uniform1f(prog.u.dissolve, smooth(0.2, 0.8, p));
+    gl.uniform1f(prog.u.wire, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.meshTris);
+    gl.drawElements(gl.TRIANGLES, mesh.triangles.length, gl.UNSIGNED_SHORT, 0);
+    if (this.settings.wire) {
+      gl.uniform1f(prog.u.wire, 1);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.meshEdges);
+      gl.drawElements(gl.LINES, mesh.edges.length, gl.UNSIGNED_SHORT, 0);
+    }
+    ['pa', 'pb', 'ua', 'ub'].forEach((name) => gl.disableVertexAttribArray(prog.a[name]));
+  }
+
+  #drawMelt(A, B, p, t) {
+    const gl = this.gl;
+    const prog = this.melt;
+    gl.useProgram(prog.program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
+    gl.enableVertexAttribArray(prog.a.p);
+    gl.vertexAttribPointer(prog.a.p, 2, gl.FLOAT, false, 0, 0);
+    this.#common(prog, t);
+    gl.uniform4fv(prog.u.fitA, this.#fit(A));
+    gl.uniform4fv(prog.u.fitB, this.#fit(B));
+    gl.uniform1f(prog.u.progress, ease(p));
+    gl.uniform1f(prog.u.strength, this.settings.strength);
+    gl.uniform1i(prog.u.mode, MODES[this.settings.mode] || 1);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disableVertexAttribArray(prog.a.p);
   }
 }
 

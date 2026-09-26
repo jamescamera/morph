@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Morph — everything becomes something else</title>
-  <meta name="description" content="Morph turns a handful of stills into one continuous, melting black-and-white film. Right in your browser.">
+  <title>Morph — every face becomes another</title>
+  <meta name="description" content="Morph turns a line-up of portraits into one continuous face-morph film, black and white, right in your browser.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
@@ -24,18 +24,18 @@
 
   <main id="top">
     <section class="hero">
-      <video class="hero__video" src="assets/hero.mp4" poster="assets/hero-poster.jpg" autoplay muted loop playsinline></video>
-      <div class="hero__copy">
-        <p class="eyebrow">Frame-to-frame video, in monochrome</p>
-        <h1>Everything<br>becomes <em>something</em><br>else.</h1>
-        <p class="lede">Drop in a few stills. Morph melts each one into the next and hands you back a single, continuous film — no timeline, no keyframes, no render farm.</p>
-        <div class="hero__cta">
-          <a class="btn" href="#studio">Start morphing</a>
-          <span class="mono">runs 100% in your browser</span>
-        </div>
+      <h1 class="hero__word hero__word--l">Face</h1>
+      <div class="hero__stage">
+        <canvas id="hero-canvas" width="900" height="900" aria-label="Portraits morphing into one another"></canvas>
+        <span class="hero__live mono"><i></i>Live · rendered in your browser</span>
+      </div>
+      <p class="hero__word hero__word--r" aria-hidden="true"><em>to face.</em></p>
+      <div class="hero__foot">
+        <p class="lede">Line up a few portraits. Morph finds the eyes, lips and jaw of every face, then warps and dissolves each one into the next: one continuous black-and-white film.</p>
+        <a class="btn btn--diff" href="#studio">Start morphing</a>
       </div>
       <div class="hero__ticker" aria-hidden="true">
-        <div>ROOM → STORM → PAPER → WINGS → FIRE → MOON → ROOM → STORM → PAPER → WINGS → FIRE → MOON →&nbsp;</div>
+        <div>LANDMARKS → ALIGN → TRIANGULATE → WARP → DISSOLVE → NEXT FACE → LANDMARKS → ALIGN → TRIANGULATE → WARP → DISSOLVE → NEXT FACE →&nbsp;</div>
       </div>
     </section>
 
@@ -59,35 +59,39 @@
         <aside class="panel">
           <div class="panel__group">
             <div class="panel__label">
-              <span>Frames</span>
-              <span class="mono" id="frame-count">0</span>
+              <span>Faces <span class="mono" id="frame-count">0</span></span>
+              <button class="link" id="clear">Clear all</button>
             </div>
             <ol class="frames" id="frames"></ol>
             <label class="drop" id="drop">
               <input type="file" id="file" accept="image/*" multiple hidden>
-              <span>Drop images or <u>browse</u></span>
+              <span id="drop-text">Drop portraits or <u>browse</u></span>
             </label>
+            <p class="hint">Works best with front-facing portraits. Faces are found on your device; nothing is uploaded.</p>
           </div>
 
           <div class="panel__group">
             <div class="panel__label"><span>Style</span></div>
             <div class="segmented" id="mode" role="radiogroup">
-              <button data-mode="liquid" aria-pressed="true">Liquid</button>
+              <button data-mode="face" aria-pressed="true">Face</button>
+              <button data-mode="liquid">Liquid</button>
               <button data-mode="swirl">Swirl</button>
               <button data-mode="luma">Luma</button>
               <button data-mode="shatter">Shatter</button>
             </div>
+            <p class="hint" id="mode-hint">Matches eyes, nose, mouth and jaw, then warps one face into the next.</p>
           </div>
 
           <div class="panel__group">
-            <label class="slider"><span>Intensity</span><input type="range" id="strength" min="0" max="1" step="0.01" value="0.6"><output>0.60</output></label>
-            <label class="slider"><span>Morph</span><input type="range" id="morph" min="0.4" max="6" step="0.1" value="2.2"><output>2.2s</output></label>
-            <label class="slider"><span>Hold</span><input type="range" id="hold" min="0" max="3" step="0.1" value="0.8"><output>0.8s</output></label>
-            <label class="slider"><span>Grain</span><input type="range" id="grain" min="0" max="0.2" step="0.01" value="0.06"><output>0.06</output></label>
+            <label class="slider"><span>Morph</span><input type="range" id="morph" min="0.4" max="6" step="0.1" value="1.8"><output>1.8s</output></label>
+            <label class="slider"><span>Hold</span><input type="range" id="hold" min="0" max="3" step="0.1" value="0.7"><output>0.7s</output></label>
+            <label class="slider"><span>Grain</span><input type="range" id="grain" min="0" max="0.2" step="0.01" value="0.05"><output>0.05</output></label>
+            <label class="slider" id="strength-row"><span>Intensity</span><input type="range" id="strength" min="0" max="1" step="0.01" value="0.6"><output>0.60</output></label>
           </div>
 
           <div class="panel__group toggles">
             <label class="toggle"><input type="checkbox" id="mono" checked><span></span>Black &amp; white</label>
+            <label class="toggle"><input type="checkbox" id="wire"><span></span>Show mesh</label>
             <label class="toggle"><input type="checkbox" id="loop" checked><span></span>Loop back to start</label>
           </div>
 
@@ -108,23 +112,23 @@
     <section class="how" id="how">
       <div class="section-head">
         <span class="mono">02 / Process</span>
-        <h2>Three steps.<br><em>No</em> timeline.</h2>
+        <h2>How a face<br>becomes <em>another.</em></h2>
       </div>
       <ol class="steps">
         <li>
           <span class="steps__n">I.</span>
-          <h3>Collect</h3>
-          <p>Any stills — photos, renders, scans. Different sizes are fine; Morph crops each to fill the frame.</p>
+          <h3>Find</h3>
+          <p>478 landmarks per face (brows, lids, lips, jaw) are located in your browser with an on-device model.</p>
         </li>
         <li>
           <span class="steps__n">II.</span>
-          <h3>Flow</h3>
-          <p>A shared noise field drags both images through one another, so pixels travel instead of fade.</p>
+          <h3>Line up</h3>
+          <p>Every face is rotated and scaled so the eyes sit on the same line, then the points are triangulated into a mesh of about a thousand triangles.</p>
         </li>
         <li>
           <span class="steps__n">III.</span>
-          <h3>Keep</h3>
-          <p>Export records the canvas straight to MP4 or WebM. Nothing is uploaded, ever.</p>
+          <h3>Warp &amp; dissolve</h3>
+          <p>Each triangle slides from the first face's shape to the second's while the pixels cross-dissolve. Toggle <em>Show mesh</em> to watch it happen.</p>
         </li>
       </ol>
     </section>
@@ -132,10 +136,14 @@
     <section class="styles" id="styles">
       <div class="section-head">
         <span class="mono">03 / Styles</span>
-        <h2>Four ways to<br><em>dissolve.</em></h2>
+        <h2>No face?<br><em>Melt</em> it instead.</h2>
+      </div>
+      <div class="melt">
+        <video class="melt__video" src="assets/hero.mp4" poster="assets/hero-poster.jpg" autoplay muted loop playsinline></video>
+        <p class="melt__caption">Rooms, streets and objects don't have landmarks, so four melt styles drag one image through the next along a drifting noise field instead.</p>
       </div>
       <div class="style-grid">
-        <article><h3>Liquid</h3><p>Ink-in-water. Edges bleed along a drifting current.</p></article>
+        <article><h3>Liquid</h3><p>Ink in water. Edges bleed along a drifting current.</p></article>
         <article><h3>Swirl</h3><p>The center twists open like a drain and pulls the next frame through.</p></article>
         <article><h3>Luma</h3><p>Highlights go first, shadows last. Made for black &amp; white.</p></article>
         <article><h3>Shatter</h3><p>The frame cracks into shards that flip one by one.</p></article>
@@ -143,15 +151,15 @@
     </section>
 
     <section class="closer">
-      <h2>Make the room<br><em>melt.</em></h2>
+      <h2>Black, white,<br><em>everyone.</em></h2>
       <a class="btn btn--invert" href="#studio">Open the studio</a>
     </section>
   </main>
 
   <footer class="footer">
     <span class="wordmark">MORPH<sup>®</sup></span>
-    <span class="mono">Built with WebGL &amp; ES modules · no uploads · no tracking</span>
-    <span class="mono">© 2026</span>
+    <span class="mono">A tribute to the face-morph sequence in the 1991 “Black or White” video. Not affiliated.</span>
+    <span class="mono">Demo portraits: <a href="https://unsplash.com/license">Unsplash</a> · WebGL + MediaPipe</span>
   </footer>
 </body>
 </html>
