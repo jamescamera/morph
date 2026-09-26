@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Morph — everything becomes something else</title>
+  <meta name="description" content="Morph turns a handful of stills into one continuous, melting black-and-white film. Right in your browser.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="src/styles.css">
+  <script type="module" src="src/app.mjs"></script>
+</head>
+<body>
+  <header class="nav">
+    <a class="wordmark" href="#top">MORPH<sup>®</sup></a>
+    <nav>
+      <a href="#studio">Studio</a>
+      <a href="#how">How it works</a>
+      <a href="#styles">Styles</a>
+    </nav>
+    <a class="btn btn--small" href="#studio">Open studio</a>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <video class="hero__video" src="assets/hero.mp4" poster="assets/hero-poster.jpg" autoplay muted loop playsinline></video>
+      <div class="hero__copy">
+        <p class="eyebrow">Frame-to-frame video, in monochrome</p>
+        <h1>Everything<br>becomes <em>something</em><br>else.</h1>
+        <p class="lede">Drop in a few stills. Morph melts each one into the next and hands you back a single, continuous film — no timeline, no keyframes, no render farm.</p>
+        <div class="hero__cta">
+          <a class="btn" href="#studio">Start morphing</a>
+          <span class="mono">runs 100% in your browser</span>
+        </div>
+      </div>
+      <div class="hero__ticker" aria-hidden="true">
+        <div>ROOM → STORM → PAPER → WINGS → FIRE → MOON → ROOM → STORM → PAPER → WINGS → FIRE → MOON →&nbsp;</div>
+      </div>
+    </section>
+
+    <section class="studio" id="studio">
+      <div class="section-head">
+        <span class="mono">01 / Studio</span>
+        <h2>The studio</h2>
+      </div>
+
+      <div class="studio__grid">
+        <div class="stage">
+          <canvas id="stage" width="1080" height="1080"></canvas>
+          <div class="stage__bar">
+            <button class="icon-btn" id="play" aria-label="Pause">❚❚</button>
+            <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Timeline">
+            <span class="mono" id="clock">0.0s</span>
+          </div>
+          <p class="stage__error" id="error" hidden></p>
+        </div>
+
+        <aside class="panel">
+          <div class="panel__group">
+            <div class="panel__label">
+              <span>Frames</span>
+              <span class="mono" id="frame-count">0</span>
+            </div>
+            <ol class="frames" id="frames"></ol>
+            <label class="drop" id="drop">
+              <input type="file" id="file" accept="image/*" multiple hidden>
+              <span>Drop images or <u>browse</u></span>
+            </label>
+          </div>
+
+          <div class="panel__group">
+            <div class="panel__label"><span>Style</span></div>
+            <div class="segmented" id="mode" role="radiogroup">
+              <button data-mode="liquid" aria-pressed="true">Liquid</button>
+              <button data-mode="swirl">Swirl</button>
+              <button data-mode="luma">Luma</button>
+              <button data-mode="shatter">Shatter</button>
+            </div>
+          </div>
+
+          <div class="panel__group">
+            <label class="slider"><span>Intensity</span><input type="range" id="strength" min="0" max="1" step="0.01" value="0.6"><output>0.60</output></label>
+            <label class="slider"><span>Morph</span><input type="range" id="morph" min="0.4" max="6" step="0.1" value="2.2"><output>2.2s</output></label>
+            <label class="slider"><span>Hold</span><input type="range" id="hold" min="0" max="3" step="0.1" value="0.8"><output>0.8s</output></label>
+            <label class="slider"><span>Grain</span><input type="range" id="grain" min="0" max="0.2" step="0.01" value="0.06"><output>0.06</output></label>
+          </div>
+
+          <div class="panel__group toggles">
+            <label class="toggle"><input type="checkbox" id="mono" checked><span></span>Black &amp; white</label>
+            <label class="toggle"><input type="checkbox" id="loop" checked><span></span>Loop back to start</label>
+          </div>
+
+          <div class="panel__group">
+            <div class="segmented" id="aspect">
+              <button data-aspect="1:1" aria-pressed="true">1:1</button>
+              <button data-aspect="9:16">9:16</button>
+              <button data-aspect="16:9">16:9</button>
+            </div>
+          </div>
+
+          <button class="btn btn--block" id="export">Export video</button>
+          <a class="download" id="download" hidden>Download ↓</a>
+        </aside>
+      </div>
+    </section>
+
+    <section class="how" id="how">
+      <div class="section-head">
+        <span class="mono">02 / Process</span>
+        <h2>Three steps.<br><em>No</em> timeline.</h2>
+      </div>
+      <ol class="steps">
+        <li>
+          <span class="steps__n">I.</span>
+          <h3>Collect</h3>
+          <p>Any stills — photos, renders, scans. Different sizes are fine; Morph crops each to fill the frame.</p>
+        </li>
+        <li>
+          <span class="steps__n">II.</span>
+          <h3>Flow</h3>
+          <p>A shared noise field drags both images through one another, so pixels travel instead of fade.</p>
+        </li>
+        <li>
+          <span class="steps__n">III.</span>
+          <h3>Keep</h3>
+          <p>Export records the canvas straight to MP4 or WebM. Nothing is uploaded, ever.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="styles" id="styles">
+      <div class="section-head">
+        <span class="mono">03 / Styles</span>
+        <h2>Four ways to<br><em>dissolve.</em></h2>
+      </div>
+      <div class="style-grid">
+        <article><h3>Liquid</h3><p>Ink-in-water. Edges bleed along a drifting current.</p></article>
+        <article><h3>Swirl</h3><p>The center twists open like a drain and pulls the next frame through.</p></article>
+        <article><h3>Luma</h3><p>Highlights go first, shadows last. Made for black &amp; white.</p></article>
+        <article><h3>Shatter</h3><p>The frame cracks into shards that flip one by one.</p></article>
+      </div>
+    </section>
+
+    <section class="closer">
+      <h2>Make the room<br><em>melt.</em></h2>
+      <a class="btn btn--invert" href="#studio">Open the studio</a>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span class="wordmark">MORPH<sup>®</sup></span>
+    <span class="mono">Built with WebGL &amp; ES modules · no uploads · no tracking</span>
+    <span class="mono">© 2026</span>
+  </footer>
+</body>
+</html>
